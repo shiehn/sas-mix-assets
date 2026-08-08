@@ -1,0 +1,14 @@
+{
+  "id": "@signalsandsorcery/mix-assets",
+  "displayName": "Mix Assets",
+  "version": "1.0.0",
+  "description": "One-shot mix assets: hits (impacts triggered on the scene downbeat), risers (one-shots end-aligned to the loop boundary), and shots (misc FX one-shots — voice samples, scratches, zaps — including user-imported audio). Samples rotate per scene for arrangement variety; a per-track lock pins the current sound so it repeats while auditioning FX presets.",
+  "generatorType": "midi",
+  "main": "index.js",
+  "minHostVersion": "2.65.0",
+  "builtIn": true,
+  "supportedTimeSignatures": "*",
+  "capabilities": {
+    "fileDialog": true
+  }
+}

@@ -1,0 +1,16 @@
+/** @type {import('jest').Config} */
+module.exports = {
+  preset: 'ts-jest',
+  testEnvironment: 'jsdom',
+  setupFilesAfterEnv: ['<rootDir>/jest.setup.ts'],
+  testMatch: ['**/__tests__/**/*.test.ts', '**/__tests__/**/*.test.tsx'],
+  moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json'],
+  transform: {
+    '^.+\\.tsx?$': ['ts-jest', { tsconfig: { jsx: 'react-jsx' } }],
+  },
+  // Resolve the SDK against the locally-installed (file:) copy.
+  moduleNameMapper: {
+    '^@signalsandsorcery/plugin-sdk$': '<rootDir>/node_modules/@signalsandsorcery/plugin-sdk',
+  },
+  testPathIgnorePatterns: ['/node_modules/', '/dist/'],
+};
