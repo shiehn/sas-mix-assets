@@ -2,8 +2,11 @@ import { parseTrackGroups } from '@signalsandsorcery/plugin-sdk';
 import {
   MIX_ASSET_GROUP_SPEC,
   asMixAssetMeta,
+  assetFromTrackName,
   kindFromTrackName,
+  mediumOf,
   planDuplicationRepair,
+  trackPrefixFor,
   type MixAssetMeta,
 } from '../mix-asset-meta';
 
@@ -36,6 +39,19 @@ describe('asMixAssetMeta', () => {
     expect(asMixAssetMeta({ ...meta(), locked: 'yes' })).toBeNull();
     expect(asMixAssetMeta({ ...meta(), source: 'web' })).toBeNull();
   });
+
+  it('accepts the MIDI family and rejects unknown mediums', () => {
+    expect(asMixAssetMeta(meta({ medium: 'midi', samplePath: null, sampleName: null }))).not.toBeNull();
+    expect(asMixAssetMeta(meta({ medium: 'audio' }))).not.toBeNull();
+    expect(asMixAssetMeta({ ...meta(), medium: 'hologram' })).toBeNull();
+  });
+});
+
+describe('mediumOf', () => {
+  it('defaults pre-MIDI metas to audio', () => {
+    expect(mediumOf(meta())).toBe('audio');
+    expect(mediumOf(meta({ medium: 'midi' }))).toBe('midi');
+  });
 });
 
 describe('parseTrackGroups round-trip with the mixAsset spec', () => {
@@ -67,6 +83,30 @@ describe('kindFromTrackName', () => {
     expect(kindFromTrackName('Kick 1')).toBeNull();
     expect(kindFromTrackName('hit 1')).toBeNull();
     expect(kindFromTrackName('Hit one')).toBeNull();
+  });
+
+  it('parses MIDI-family names too (kind only)', () => {
+    expect(kindFromTrackName('MIDI Hit 1')).toBe('hit');
+    expect(kindFromTrackName('MIDI Riser 2')).toBe('riser');
+  });
+});
+
+describe('assetFromTrackName / trackPrefixFor', () => {
+  it('round-trips both families', () => {
+    expect(assetFromTrackName(`${trackPrefixFor('hit', 'audio')} 1`)).toEqual({
+      kind: 'hit',
+      medium: 'audio',
+    });
+    expect(assetFromTrackName(`${trackPrefixFor('shot', 'midi')} 3`)).toEqual({
+      kind: 'shot',
+      medium: 'midi',
+    });
+  });
+
+  it('rejects malformed MIDI names', () => {
+    expect(assetFromTrackName('MIDI 1')).toBeNull();
+    expect(assetFromTrackName('MIDIHit 1')).toBeNull();
+    expect(assetFromTrackName('midi Hit 1')).toBeNull();
   });
 });
 
@@ -124,7 +164,7 @@ describe('planDuplicationRepair', () => {
       [{ dbId: 'new-s1', name: 'Shot 1' }],
     );
     expect(plan2.pairings).toHaveLength(0);
-    expect(plan2.unpairedOrphans).toEqual([{ dbId: 'new-s1', kind: 'shot' }]);
+    expect(plan2.unpairedOrphans).toEqual([{ dbId: 'new-s1', kind: 'shot', medium: 'audio' }]);
   });
 
   it('never pairs across kinds', () => {
@@ -134,6 +174,24 @@ describe('planDuplicationRepair', () => {
     );
     expect(plan.pairings).toHaveLength(0);
     expect(plan.unpairedStaleDbIds).toEqual(['old-r']);
-    expect(plan.unpairedOrphans).toEqual([{ dbId: 'new-h', kind: 'hit' }]);
+    expect(plan.unpairedOrphans).toEqual([{ dbId: 'new-h', kind: 'hit', medium: 'audio' }]);
+  });
+
+  it('never pairs across families: a MIDI Hit orphan is not the audio Hit meta\'s clone', () => {
+    const plan = planDuplicationRepair(
+      [
+        { dbId: 'old-audio', meta: meta({ kind: 'hit', slotIndex: 0 }) },
+        { dbId: 'old-midi', meta: meta({ kind: 'hit', slotIndex: 0, medium: 'midi', samplePath: null, sampleName: null, rootPitch: 45 }) },
+      ],
+      [
+        { dbId: 'new-midi', name: 'MIDI Hit 1' },
+        { dbId: 'new-audio', name: 'Hit 1' },
+      ],
+    );
+    const byStale = new Map(plan.pairings.map((p) => [p.staleDbId, p]));
+    expect(byStale.get('old-audio')?.orphanDbId).toBe('new-audio');
+    expect(byStale.get('old-midi')?.orphanDbId).toBe('new-midi');
+    expect(plan.unpairedOrphans).toHaveLength(0);
+    expect(plan.unpairedStaleDbIds).toHaveLength(0);
   });
 });

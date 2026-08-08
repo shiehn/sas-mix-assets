@@ -1,7 +1,7 @@
 {
   "name": "@signalsandsorcery/mix-assets",
-  "version": "1.0.0",
-  "description": "Mix Assets panel — a per-project palette of one-shot mix assets in three kinds: hits (downbeat impacts), risers (end-aligned builds), and shots (misc FX one-shots incl. user-imported audio), with per-scene sample rotation and a lock to pin a sound while auditioning FX",
+  "version": "1.1.0",
+  "description": "Mix Assets panel — a per-project palette of one-shot mix assets in three kinds (hits, risers, shots) across two families: MIDI root-note instrument tracks (deterministic, no LLM — pick any synth/rompler sound) and audio sampler one-shots (incl. user-imported audio), with per-scene sound rotation and a lock to pin a sound while auditioning FX",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",

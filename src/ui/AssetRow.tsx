@@ -11,7 +11,8 @@
 import React from 'react';
 import type { PluginHost } from '@signalsandsorcery/plugin-sdk';
 import { TrackExternalFxSection } from '@signalsandsorcery/plugin-sdk';
-import type { MixAssetMeta } from '../mix-asset-meta';
+import { mediumOf, type MixAssetMeta } from '../mix-asset-meta';
+import { SoundDrawer } from './SoundDrawer';
 import { palette, styles } from './styles';
 
 export interface AssetRowProps {
@@ -24,6 +25,8 @@ export interface AssetRowProps {
   busy: boolean;
   previewing: boolean;
   fxOpen: boolean;
+  /** MIDI rows only: whether the sound (instrument-pick) drawer is open. */
+  soundOpen?: boolean;
   /** Max legal shot offset for the current scene geometry. */
   maxOffsetBeats: number;
   onPreviewToggle: () => void;
@@ -33,6 +36,10 @@ export interface AssetRowProps {
   onFxToggle: () => void;
   onDelete: () => void;
   onOffsetChange?: (beats: number) => void;
+  /** MIDI rows only: toggle the sound drawer. */
+  onSoundToggle?: () => void;
+  /** MIDI rows only: a new instrument was loaded from the sound drawer. */
+  onInstrumentChanged?: (name: string) => void;
 }
 
 function btnStyle(active?: boolean, disabled?: boolean): React.CSSProperties {
@@ -45,6 +52,7 @@ function btnStyle(active?: boolean, disabled?: boolean): React.CSSProperties {
 
 export function AssetRow(props: AssetRowProps): React.ReactElement {
   const { meta } = props;
+  const isMidi = mediumOf(meta) === 'midi';
   const hasSample = Boolean(meta.samplePath);
 
   return (
@@ -54,11 +62,11 @@ export function AssetRow(props: AssetRowProps): React.ReactElement {
         <span
           style={{
             ...styles.rowSample,
-            ...(hasSample ? {} : styles.rowSampleMissing),
+            ...(hasSample || isMidi ? {} : styles.rowSampleMissing),
           }}
           title={meta.samplePath ?? undefined}
         >
-          {meta.sampleName ?? 'no sample — shuffle to assign'}
+          {meta.sampleName ?? (isMidi ? 'Surge XT — default patch' : 'no sample — shuffle to assign')}
         </span>
 
         {meta.kind === 'riser' && meta.truncated && (
@@ -82,24 +90,42 @@ export function AssetRow(props: AssetRowProps): React.ReactElement {
           </span>
         )}
 
-        <button
-          type="button"
-          style={btnStyle(props.previewing, !hasSample)}
-          disabled={!hasSample}
-          title="Preview the sample"
-          onClick={props.onPreviewToggle}
-        >
-          {props.previewing ? '■' : '▶'}
-        </button>
+        {!isMidi && (
+          <button
+            type="button"
+            style={btnStyle(props.previewing, !hasSample)}
+            disabled={!hasSample}
+            title="Preview the sample"
+            onClick={props.onPreviewToggle}
+          >
+            {props.previewing ? '■' : '▶'}
+          </button>
+        )}
         <button
           type="button"
           style={btnStyle(false, meta.locked || props.busy)}
           disabled={meta.locked || props.busy}
-          title={meta.locked ? 'Locked — unlock to shuffle' : 'Shuffle to another sample'}
+          title={
+            meta.locked
+              ? 'Locked — unlock to shuffle'
+              : isMidi
+                ? 'Shuffle to another synth preset (Surge XT only)'
+                : 'Shuffle to another sample'
+          }
           onClick={props.onShuffle}
         >
           🎲
         </button>
+        {isMidi && props.onSoundToggle && (
+          <button
+            type="button"
+            style={btnStyle(props.soundOpen)}
+            title="Pick the sound: load a different instrument (rompler / synth) or open its editor"
+            onClick={props.onSoundToggle}
+          >
+            🎹
+          </button>
+        )}
         <button
           type="button"
           style={btnStyle(meta.locked)}
@@ -137,6 +163,13 @@ export function AssetRow(props: AssetRowProps): React.ReactElement {
           ✕
         </button>
       </div>
+      {props.soundOpen && props.onInstrumentChanged && (
+        <SoundDrawer
+          host={props.host}
+          trackId={props.trackId}
+          onInstrumentChanged={props.onInstrumentChanged}
+        />
+      )}
       {props.fxOpen && (
         <div style={styles.fxDrawer}>
           <TrackExternalFxSection host={props.host} trackId={props.trackId} />
