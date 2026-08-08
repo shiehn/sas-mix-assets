@@ -67,6 +67,11 @@ describe('buildMidiHitNotes', () => {
       { pitch: 43, startBeat: 0, durationBeats: 1, velocity: 110, channel: 0 },
     ]);
   });
+
+  it('places the root at every requested start (long-pattern midpoint)', () => {
+    expect(buildMidiHitNotes(43, [0, 32]).map((n) => n.startBeat)).toEqual([0, 32]);
+    expect(buildMidiHitNotes(43, [0, 32]).every((n) => n.pitch === 43)).toBe(true);
+  });
 });
 
 describe('buildMidiRiserNotes', () => {

@@ -12,7 +12,7 @@ carrying one **deterministic** root note. No LLM is involved:
 
 | Kind | Note written |
 |---|---|
-| **MIDI Hit** | the root, quarter note on the scene downbeat |
+| **MIDI Hit** | the root, quarter note on the scene downbeat (16+ bar scenes add a second hit at the loop midpoint) |
 | **MIDI Riser** | the root held across the **last bar** of the loop |
 | **MIDI Shot** | the root, quarter note at a user-chosen beat offset |
 
@@ -27,7 +27,7 @@ the instrument's editor instead).
 
 | Kind | Placement in the scene | Library folders |
 |---|---|---|
-| **Hit** | one pitch-60 note on the scene downbeat; the openEnded sampler rings the impact to its natural end | `impact`, `hit`, `sub-drop` |
+| **Hit** | one pitch-60 note on the scene downbeat (16+ bar scenes add a second hit at the loop midpoint); the openEnded sampler rings the impact to its natural end | `impact`, `hit`, `sub-drop` |
 | **Riser** | note positioned so the sample's natural **end** lands exactly on the loop boundary (`start = loopEnd − sampleDuration`, via `host.getAudioFileInfo`) | `riser`, `sweep` |
 | **Shot** | note at a user-chosen beat offset — voice samples, scratches, zaps; import your own audio per track | `zap`, `texture`, `downlifter` |
 
@@ -44,6 +44,23 @@ different scenes — that per-scene variety is the arranger's placement
 palette. The per-row **Lock** pins the current sound against every rotation
 path (manual shuffle, Shuffle All, scene-duplication auto-rotate), so the
 same hit repeats verbatim while you audition FX presets.
+
+## Round robin — one asset per kind at a time
+
+Members of a kind — **MIDI and audio together** (a MIDI hit and a sample hit
+are alternatives, never layered) — form one rotation pool. Exactly one
+member per kind is audible (accent-marked ●); the rest are engine-muted. The
+pointer advances one step on every transport **stop**, so successive
+playthroughs cycle the pool, and a freshly added asset takes the active slot
+so you hear it immediately. State lives in the scene-scoped `roundRobin`
+plugin_data key.
+
+The mutes are **engine-only by design** — the DB `muted` column is never
+written, because the arranger push drops DB-muted layers and every variant
+must keep reaching the cloud palette (the arranger brain already places at
+most one asset of a kind at a time). Corollary: enforcement happens while
+the Mix Assets panel is open; after a fresh app start the mutes re-apply
+when the panel first mounts for the scene.
 
 ## Arranger contract
 

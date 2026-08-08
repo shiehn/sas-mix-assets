@@ -80,13 +80,25 @@ export {
 } from './src/mix-asset-meta';
 export { KIND_FOLDERS, createAssetResolver } from './src/asset-resolver';
 export {
+  LONG_PATTERN_MIN_BARS,
   buildClip,
   buildHitNotes,
   buildRiserNotes,
   buildShotNotes,
+  hitStartBeats,
   maxShotOffsetBeats,
   type PlacementContext,
 } from './src/placement';
+export {
+  ROUND_ROBIN_KEY,
+  advanceActive,
+  asActiveByKind,
+  mutePlan,
+  normalizeActive,
+  sameActive,
+  type ActiveByKind,
+  type RoundRobinMember,
+} from './src/round-robin';
 export {
   buildMidiHitNotes,
   buildMidiRiserNotes,

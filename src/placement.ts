@@ -24,15 +24,33 @@ export interface PlacementContext {
 /** Minimum audible/representable note duration in beats. */
 const MIN_DURATION_BEATS = 0.25;
 
+/** Scenes at least this long get a second hit at the midpoint. */
+export const LONG_PATTERN_MIN_BARS = 16;
+
 export interface RiserPlacement {
   notes: PluginMidiNote[];
   /** Sample longer than the scene: placed at 0, end NOT aligned. */
   truncated: boolean;
 }
 
-/** Hit: one note on the scene downbeat. */
-export function buildHitNotes(): PluginMidiNote[] {
-  return [{ pitch: 60, startBeat: 0, durationBeats: 1, velocity: 110, channel: 0 }];
+/**
+ * Where hits land: the downbeat, plus the loop midpoint (the second
+ * phrase's downbeat — bar 9 of 16) for long patterns, so a 16-bar scene
+ * isn't one lonely impact followed by 15 empty bars.
+ */
+export function hitStartBeats(bars: number, maxBeats: number): number[] {
+  return Number.isFinite(bars) && bars >= LONG_PATTERN_MIN_BARS ? [0, maxBeats / 2] : [0];
+}
+
+/** Hit: one note per start beat (see hitStartBeats). */
+export function buildHitNotes(startBeats: readonly number[] = [0]): PluginMidiNote[] {
+  return startBeats.map((startBeat) => ({
+    pitch: 60,
+    startBeat,
+    durationBeats: 1,
+    velocity: 110,
+    channel: 0,
+  }));
 }
 
 /**

@@ -5,7 +5,8 @@
  * rompler, synth, whatever) carrying one deterministically-written root
  * note:
  *
- *   midi hit   → the root, quarter note on the scene downbeat
+ *   midi hit   → the root, quarter note on the scene downbeat (long
+ *                patterns add a second hit at the loop midpoint)
  *   midi riser → the root held for the LAST BAR of the loop
  *   midi shot  → the root, quarter note at a user-chosen beat offset
  *
@@ -77,9 +78,16 @@ export function firstBassPitch(notes: readonly PluginMidiNote[] | undefined): nu
   return best ? best.pitch : null;
 }
 
-/** MIDI hit: the root, one quarter note on the scene downbeat. */
-export function buildMidiHitNotes(pitch: number): PluginMidiNote[] {
-  return [{ pitch, startBeat: 0, durationBeats: 1, velocity: 110, channel: 0 }];
+/** MIDI hit: the root, one quarter note per start beat (downbeat, plus the
+ *  loop midpoint on long patterns — see placement.ts hitStartBeats). */
+export function buildMidiHitNotes(pitch: number, startBeats: readonly number[] = [0]): PluginMidiNote[] {
+  return startBeats.map((startBeat) => ({
+    pitch,
+    startBeat,
+    durationBeats: 1,
+    velocity: 110,
+    channel: 0,
+  }));
 }
 
 /**

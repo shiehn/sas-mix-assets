@@ -21,6 +21,8 @@ export interface AssetRowProps {
   trackId: string;
   trackName: string;
   meta: MixAssetMeta;
+  /** Round robin: this member plays the current rotation (others are muted). */
+  active?: boolean;
   muted: boolean;
   busy: boolean;
   previewing: boolean;
@@ -57,7 +59,18 @@ export function AssetRow(props: AssetRowProps): React.ReactElement {
 
   return (
     <>
-      <div style={styles.row} data-testid={`mix-asset-row-${props.trackName}`}>
+      <div
+        style={{ ...styles.row, ...(props.active ? styles.rowActive : {}) }}
+        data-testid={`mix-asset-row-${props.trackName}`}
+      >
+        {props.active && (
+          <span
+            style={styles.activeDot}
+            title="Plays this rotation — same-kind assets round-robin, one at a time (advances on stop)"
+          >
+            ●
+          </span>
+        )}
         <span style={styles.rowName}>{props.trackName}</span>
         <span
           style={{

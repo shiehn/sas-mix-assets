@@ -28,6 +28,16 @@
  * palette. The per-row Lock pins a sound against every rotation path so it
  * repeats verbatim while the user auditions FX presets on the track.
  *
+ * ROUND ROBIN (playback): only ONE member per kind is audible at a time —
+ * MIDI and audio of the same kind share the pool (a MIDI hit and a sample
+ * hit never stack). The active member advances one step on every transport
+ * stop and is enforced with ENGINE-only mutes; the DB muted column is left
+ * alone so the arranger push still receives every variant (the cloud brain
+ * already places at most one asset of a kind at a time).
+ *
+ * LONG PATTERNS: scenes of 16+ bars place hits on the downbeat AND the loop
+ * midpoint (the second phrase's downbeat), for both families.
+ *
  * Persistence contract (read main-side by the arranger push service):
  * one scene-scoped plugin_data key per member — `track:<dbId>:mixAsset`
  * (see src/mix-asset-meta.ts). Scene duplication copies these keys verbatim
@@ -71,6 +81,7 @@ import {
   buildHitNotes,
   buildRiserNotes,
   buildShotNotes,
+  hitStartBeats,
   maxShotOffsetBeats,
   type PlacementContext,
 } from './src/placement';
@@ -81,6 +92,16 @@ import {
   rootPitchFromContext,
 } from './src/midi-placement';
 import { deriveRootPitch } from './src/root-pitch';
+import {
+  ROUND_ROBIN_KEY,
+  advanceActive,
+  asActiveByKind,
+  mutePlan,
+  normalizeActive,
+  sameActive,
+  type ActiveByKind,
+  type RoundRobinMember,
+} from './src/round-robin';
 import { asHistory, buildExcludeSet, historyKey, recordHistory } from './src/rotation';
 import { createAssetResolver, type AssetResolver } from './src/asset-resolver';
 import { AssetRow } from './src/ui/AssetRow';
@@ -146,6 +167,11 @@ function memberOrder(a: MemberState, b: MemberState): number {
   return a.meta.slotIndex - b.meta.slotIndex;
 }
 
+/** The round-robin view of a member list (kind pool spans BOTH families). */
+function asRoundRobinMembers(memberList: readonly MemberState[]): RoundRobinMember[] {
+  return memberList.map((m) => ({ dbId: m.handle.dbId, kind: m.meta.kind }));
+}
+
 export function MixAssetsPanel(props: PluginUIProps): React.ReactElement {
   const { host, activeSceneId } = props;
 
@@ -159,6 +185,10 @@ export function MixAssetsPanel(props: PluginUIProps): React.ReactElement {
   const [soundOpenDbId, setSoundOpenDbId] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [addMenuKind, setAddMenuKind] = useState<MixAssetKind | null>(null);
+  /** Round robin: which member of each kind plays this rotation. */
+  const [active, setActive] = useState<ActiveByKind>({});
+  const activeRef = useRef<ActiveByKind>({});
+  activeRef.current = active;
 
   const panelBus = usePanelBus(host, activeSceneId);
   const anySolo = useAnySolo(host);
@@ -256,7 +286,7 @@ export function MixAssetsPanel(props: PluginUIProps): React.ReactElement {
         const pitch = meta.rootPitch ?? rootPitchFromContext(context.key, context.chordProgression);
         let midiNotes;
         if (meta.kind === 'hit') {
-          midiNotes = buildMidiHitNotes(pitch);
+          midiNotes = buildMidiHitNotes(pitch, hitStartBeats(context.bars, ctx.maxBeats));
         } else if (meta.kind === 'riser') {
           const qnPerBar = tryParseTimeSignature(context.timeSignature)?.quarterNotesPerBar ?? 4;
           midiNotes = buildMidiRiserNotes(ctx, pitch, qnPerBar);
@@ -269,7 +299,7 @@ export function MixAssetsPanel(props: PluginUIProps): React.ReactElement {
       let truncated = false;
       let notes;
       if (meta.kind === 'hit') {
-        notes = buildHitNotes();
+        notes = buildHitNotes(hitStartBeats(context.bars, ctx.maxBeats));
       } else if (meta.kind === 'riser') {
         const placement = buildRiserNotes(ctx, meta.sampleDurationSeconds ?? 0);
         notes = placement.notes;
@@ -416,6 +446,38 @@ export function MixAssetsPanel(props: PluginUIProps): React.ReactElement {
   );
 
   // ---------------------------------------------------------------------
+  // Round robin: only ONE member per kind is audible; MIDI and audio of the
+  // same kind share the pool. Enforced via ENGINE-only mutes (never the DB
+  // muted column — the arranger push must keep seeing every variant) and
+  // advanced one step on every transport STOP, so the next playthrough
+  // starts with the next asset already in place.
+  // ---------------------------------------------------------------------
+  const applyRoundRobin = useCallback(
+    (activeMap: ActiveByKind, memberList: readonly MemberState[]): void => {
+      const plan = mutePlan(activeMap, asRoundRobinMembers(memberList));
+      setMuted((prev) => ({ ...prev, ...plan }));
+      for (const m of memberList) {
+        host
+          .setTrackMute(m.handle.id, plan[m.handle.dbId] ?? false)
+          .catch((err: unknown) => console.warn('[MixAssets] round-robin mute failed:', err));
+      }
+    },
+    [host],
+  );
+
+  const setActiveAndEnforce = useCallback(
+    (next: ActiveByKind, memberList: readonly MemberState[], sceneId: string): void => {
+      activeRef.current = next;
+      setActive(next);
+      host
+        .setSceneData(sceneId, ROUND_ROBIN_KEY, next)
+        .catch((err: unknown) => console.warn('[MixAssets] round-robin persist failed:', err));
+      applyRoundRobin(next, memberList);
+    },
+    [host, applyRoundRobin],
+  );
+
+  // ---------------------------------------------------------------------
   // Load: tracks + scene data → repair duplication → re-arm samplers.
   // ---------------------------------------------------------------------
   const membersRef = useRef<MemberState[]>([]);
@@ -531,6 +593,19 @@ export function MixAssetsPanel(props: PluginUIProps): React.ReactElement {
       setMembers(next);
       setLoadError(null);
 
+      // Round robin: restore the active map (repairing stale dbIds from
+      // duplication/deletion) and enforce the one-per-kind mutes.
+      const stored = asActiveByKind(sceneData[ROUND_ROBIN_KEY]);
+      const { active: normalized, changed } = normalizeActive(stored, asRoundRobinMembers(next));
+      activeRef.current = normalized;
+      setActive(normalized);
+      if (changed) {
+        host
+          .setSceneData(activeSceneId, ROUND_ROBIN_KEY, normalized)
+          .catch((err: unknown) => console.warn('[MixAssets] round-robin persist failed:', err));
+      }
+      applyRoundRobin(normalized, next);
+
       const sizes = await resolver.getPoolSizes();
       setPoolEmpty(sizes.hit + sizes.riser + sizes.shot === 0);
     } catch (err: unknown) {
@@ -538,7 +613,7 @@ export function MixAssetsPanel(props: PluginUIProps): React.ReactElement {
       console.warn('[MixAssetsPanel] reload failed:', err);
       setLoadError(message);
     }
-  }, [host, activeSceneId, resolver, pickWithRotation, applySample, shuffleMidiPreset]);
+  }, [host, activeSceneId, resolver, pickWithRotation, applySample, shuffleMidiPreset, applyRoundRobin]);
 
   useEffect(() => {
     setMembers([]);
@@ -546,6 +621,8 @@ export function MixAssetsPanel(props: PluginUIProps): React.ReactElement {
     setFxOpenDbId(null);
     setSoundOpenDbId(null);
     setAddMenuKind(null);
+    setActive({});
+    activeRef.current = {};
     void reload();
   }, [reload]);
 
@@ -555,6 +632,21 @@ export function MixAssetsPanel(props: PluginUIProps): React.ReactElement {
     const unsubscribe = host.onAfterAgentMutation(() => void reload());
     return unsubscribe;
   }, [host, reload]);
+
+  // Round robin advance: one step per transport STOP (not play — flipping
+  // mutes just after the downbeat would chop the ringing hit), so the next
+  // playthrough starts with the next asset already enforced.
+  useEffect(() => {
+    if (!activeSceneId || typeof host.onTransportEvent !== 'function') return;
+    const unsubscribe = host.onTransportEvent((event) => {
+      if (event.type !== 'stop') return;
+      const memberList = membersRef.current;
+      const next = advanceActive(activeRef.current, asRoundRobinMembers(memberList));
+      if (sameActive(next, activeRef.current)) return;
+      setActiveAndEnforce(next, memberList, activeSceneId);
+    });
+    return unsubscribe;
+  }, [host, activeSceneId, setActiveAndEnforce]);
 
   // Riser placement depends on bpm/bars/meter — rewrite when they change.
   const placementKeyRef = useRef<string | null>(null);
@@ -720,10 +812,19 @@ export function MixAssetsPanel(props: PluginUIProps): React.ReactElement {
           await host.deleteTrack(member.handle.id);
           await host.deleteSceneData(activeSceneId, metaKeyFor(member.handle.dbId));
           setMembers((prev) => prev.filter((m) => m.handle.dbId !== member.handle.dbId));
+          // If the deleted member held the active slot, hand it to the next.
+          const remaining = membersRef.current.filter(
+            (m) => m.handle.dbId !== member.handle.dbId,
+          );
+          const { active: nextActive, changed } = normalizeActive(
+            activeRef.current,
+            asRoundRobinMembers(remaining),
+          );
+          if (changed) setActiveAndEnforce(nextActive, remaining, activeSceneId);
         });
       })();
     },
-    [host, activeSceneId, withBusy],
+    [host, activeSceneId, withBusy, setActiveAndEnforce],
   );
 
   /** MIDI rows: a new instrument was loaded — remember its display name. */
@@ -811,13 +912,19 @@ export function MixAssetsPanel(props: PluginUIProps): React.ReactElement {
             );
           }
           setMembers((prev) => [...prev, { handle, meta }].sort(memberOrder));
+          // The freshly added asset takes the active slot so it's audible now.
+          setActiveAndEnforce(
+            { ...activeRef.current, [kind]: handle.dbId },
+            [...membersRef.current, { handle, meta }],
+            activeSceneId,
+          );
         } catch (err: unknown) {
           const message = err instanceof Error ? err.message : String(err);
           host.showToast('error', 'Mix Assets', message);
         }
       })();
     },
-    [mc, activeSceneId, host, pickWithRotation, applySample],
+    [mc, activeSceneId, host, pickWithRotation, applySample, setActiveAndEnforce],
   );
 
   /**
@@ -877,13 +984,19 @@ export function MixAssetsPanel(props: PluginUIProps): React.ReactElement {
           }
 
           setMembers((prev) => [...prev, { handle, meta }].sort(memberOrder));
+          // The freshly added asset takes the active slot so it's audible now.
+          setActiveAndEnforce(
+            { ...activeRef.current, [kind]: handle.dbId },
+            [...membersRef.current, { handle, meta }],
+            activeSceneId,
+          );
         } catch (err: unknown) {
           const message = err instanceof Error ? err.message : String(err);
           host.showToast('error', 'Mix Assets', message);
         }
       })();
     },
-    [mc, activeSceneId, host, writePlacement, shuffleMidiPreset],
+    [mc, activeSceneId, host, writePlacement, shuffleMidiPreset, setActiveAndEnforce],
   );
 
   const handleShuffleAll = useCallback(
@@ -946,6 +1059,7 @@ export function MixAssetsPanel(props: PluginUIProps): React.ReactElement {
             trackId={member.handle.id}
             trackName={member.handle.name}
             meta={member.meta}
+            active={active[member.meta.kind] === member.handle.dbId}
             muted={Boolean(muted[member.handle.dbId])}
             busy={Boolean(busy[member.handle.dbId])}
             previewing={previewingDbId === member.handle.dbId}

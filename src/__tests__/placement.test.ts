@@ -3,6 +3,7 @@ import {
   buildHitNotes,
   buildRiserNotes,
   buildShotNotes,
+  hitStartBeats,
   maxShotOffsetBeats,
   type PlacementContext,
 } from '../placement';
@@ -13,12 +14,34 @@ const CTX_44: PlacementContext = { bpm: 120, clipEndSeconds: 16, maxBeats: 32 };
 /** 4 bars of 6/8 at 90 BPM: 6/8 bar = 3 quarter-notes → 12 qn = 8 seconds. */
 const CTX_68: PlacementContext = { bpm: 90, clipEndSeconds: 8, maxBeats: 12 };
 
+describe('hitStartBeats', () => {
+  it('short scenes get the downbeat only', () => {
+    expect(hitStartBeats(4, 16)).toEqual([0]);
+    expect(hitStartBeats(8, 32)).toEqual([0]);
+  });
+
+  it('16+ bar scenes add the loop midpoint (second phrase downbeat)', () => {
+    expect(hitStartBeats(16, 64)).toEqual([0, 32]); // 4/4: bar 9
+    expect(hitStartBeats(16, 56)).toEqual([0, 28]); // 7/8: still the midpoint
+  });
+
+  it('guards bad bar counts', () => {
+    expect(hitStartBeats(NaN, 64)).toEqual([0]);
+  });
+});
+
 describe('buildHitNotes', () => {
-  it('places one pitch-60 note on the downbeat', () => {
+  it('places one pitch-60 note on the downbeat by default', () => {
     const notes = buildHitNotes();
     expect(notes).toHaveLength(1);
     expect(notes[0]).toMatchObject({ pitch: 60, startBeat: 0, channel: 0 });
     expect(notes[0].velocity).toBeGreaterThan(0);
+  });
+
+  it('places one note per requested start (long-pattern midpoint hit)', () => {
+    const notes = buildHitNotes(hitStartBeats(16, 64));
+    expect(notes.map((n) => n.startBeat)).toEqual([0, 32]);
+    expect(new Set(notes.map((n) => n.pitch))).toEqual(new Set([60]));
   });
 });
 

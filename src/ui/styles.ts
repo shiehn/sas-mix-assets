@@ -66,6 +66,11 @@ export const styles: Record<string, CSSProperties> = {
     background: palette.cardBg,
     border: `1px solid ${palette.cardBorder}`,
   },
+  rowActive: {
+    borderColor: palette.accent,
+    background: 'rgba(139, 124, 246, 0.08)',
+  },
+  activeDot: { color: palette.accent, fontSize: 9, lineHeight: '18px' },
   rowName: { fontWeight: 600, minWidth: 52 },
   rowSample: {
     flex: 1,
