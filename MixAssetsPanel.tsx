@@ -92,6 +92,7 @@ import {
   rootPitchFromContext,
 } from './src/midi-placement';
 import { deriveRootPitch } from './src/root-pitch';
+import { basename } from './src/paths';
 import {
   ROUND_ROBIN_KEY,
   advanceActive,
@@ -141,11 +142,6 @@ function isPresetIncompatible(err: unknown): boolean {
 
 function metaKeyFor(dbId: string): string {
   return `track:${dbId}:${MIX_ASSET_META_KEY}`;
-}
-
-function basename(p: string): string {
-  const parts = p.split('/');
-  return parts[parts.length - 1] ?? p;
 }
 
 function placementContext(mc: MusicalContext): PlacementContext {
