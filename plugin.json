@@ -5,7 +5,7 @@
   "description": "One-shot mix assets in two families. MIDI (top): hits/risers/shots as instrument tracks carrying one deterministic root note (doubling the scene's first bass note, else the key root — no LLM) — pick any synth/rompler sound, shuffle Surge presets. Audio samples (bottom): sampler one-shots — hits on the downbeat, risers end-aligned to the loop boundary, shots at a chosen offset, including user-imported audio. Sounds rotate per scene for arrangement variety; a per-track lock pins the current sound so it repeats while auditioning FX presets. Playback is round-robin per kind: only one hit/riser/shot sounds at a time (MIDI and audio share the pool), advancing on every transport stop.",
   "generatorType": "midi",
   "main": "index.js",
-  "minHostVersion": "2.65.0",
+  "minHostVersion": "3.0.0",
   "builtIn": true,
   "supportedTimeSignatures": "*",
   "capabilities": {
